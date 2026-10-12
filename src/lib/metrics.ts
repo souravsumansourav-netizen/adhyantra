@@ -190,13 +190,33 @@ export function parseMetricResolution(
 
 /**
  * Matches baseline date for an Adhyantra date.
- * Default is Year-over-Year (e.g. 2026-10-10 -> 2025-10-10).
+ * Festival campaign alignment:
+ *   Adhyantra Day 1 (2026-10-10) -> Mriganka Day 1 (2025-09-21)
+ *   10th data is compared to 21st Sep, 11th compared to 22nd Sep, and so on.
+ * Mode supports 'festival' (default), 'yoy', or 'same_date'.
  */
-export function getBaselineDate(dateStr: string, mode: 'yoy' | 'same_date' = 'yoy'): string {
+export function getBaselineDate(
+  dateStr: string,
+  mode: 'festival' | 'yoy' | 'same_date' = 'festival'
+): string {
   if (mode === 'same_date') return dateStr;
-  const [year, month, day] = dateStr.split('-');
-  const prevYear = parseInt(year, 10) - 1;
-  return `${prevYear}-${month}-${day}`;
+
+  const [yearStr, monthStr, dayStr] = dateStr.split('-');
+  const y = parseInt(yearStr, 10);
+  const m = parseInt(monthStr, 10);
+  const d = parseInt(dayStr, 10);
+
+  // Campaign Day 1: October 10th (2026-10-10) corresponds to Mriganka Baseline Day 1: September 21st (2025-09-21)
+  // 10th -> 21st Sep, 11th -> 22nd Sep, 12th -> 23rd Sep, and so on.
+  const currentDate = new Date(Date.UTC(y, m - 1, d));
+  const campaignAnchor = new Date(Date.UTC(y, 9, 10)); // October 10
+  const diffDays = Math.round(
+    (currentDate.getTime() - campaignAnchor.getTime()) / (24 * 60 * 60 * 1000)
+  );
+
+  const baselineAnchor = new Date(Date.UTC(y - 1, 8, 21)); // September 21
+  baselineAnchor.setUTCDate(baselineAnchor.getUTCDate() + diffDays);
+  return baselineAnchor.toISOString().split('T')[0];
 }
 
 /**
@@ -238,11 +258,11 @@ export function buildDateComparisonRows(
       }
     } catch {}
 
-    const yoyBaselineDate = getBaselineDate(date, settings.baseline_mode);
+    const pairedBaselineDate = getBaselineDate(date, settings.baseline_mode as any);
 
     // Resolve Mriganka record:
     // 1. Manually assigned baseline date
-    // 2. Exact YoY match
+    // 2. Calculated festival baseline match (e.g. 10th -> 21st Sep, 11th -> 22nd Sep)
     // 3. Exact same date match
     // 4. Any available Mriganka date not yet paired, or the single available Mriganka date
     // 5. Fallback: first available Mriganka date
@@ -250,8 +270,8 @@ export function buildDateComparisonRows(
 
     if (manualBaselineDate && mrigankaMap.has(manualBaselineDate)) {
       mriganka = mrigankaMap.get(manualBaselineDate);
-    } else if (mrigankaMap.has(yoyBaselineDate)) {
-      mriganka = mrigankaMap.get(yoyBaselineDate);
+    } else if (mrigankaMap.has(pairedBaselineDate)) {
+      mriganka = mrigankaMap.get(pairedBaselineDate);
     } else if (mrigankaMap.has(date)) {
       mriganka = mrigankaMap.get(date);
     } else if (availableMrigankaDates.length === 1) {
@@ -267,7 +287,7 @@ export function buildDateComparisonRows(
 
     const matchedBaselineDate = mriganka
       ? mriganka.metric_date
-      : manualBaselineDate || yoyBaselineDate;
+      : manualBaselineDate || pairedBaselineDate;
     const sanityIssues: SanityIssue[] = [];
 
     // Check missing sources
@@ -439,9 +459,8 @@ export function buildDateComparisonRows(
 
 /**
  * Aggregates a list of daily metrics across a date range according to the rules:
- * - sessions and new_users are summed
- * - bounce_rate, organic_bounce_rate and avg_session_duration are session-weighted averages
- * - total_users is the sum of daily users ("Sum of daily users")
+ * - total_users, sessions, and new_users are summed across the dates
+ * - bounce_rate, avg_session_duration, and organic_bounce_rate are averaged across the dates
  */
 export function aggregateMetrics(records: (DailyMetric | PublicMetric)[]): RangeAggregatedMetrics {
   if (records.length === 0) {
@@ -458,24 +477,43 @@ export function aggregateMetrics(records: (DailyMetric | PublicMetric)[]): Range
   let sumDailyUsers = 0;
   let sumSessions = 0;
   let sumNewUsers = 0;
-  let weightedBounce = 0;
-  let weightedOrganicBounce = 0;
-  let weightedDuration = 0;
+  let sumBounce = 0;
+  let countBounce = 0;
+  let sumOrganicBounce = 0;
+  let countOrganicBounce = 0;
+  let sumDuration = 0;
+  let countDuration = 0;
 
   for (const r of records) {
-    const s = Number(r.sessions) || 0;
     sumDailyUsers += Number(r.total_users) || 0;
-    sumSessions += s;
+    sumSessions += Number(r.sessions) || 0;
     sumNewUsers += Number(r.new_users) || 0;
 
-    weightedBounce += (Number(r.bounce_rate) || 0) * s;
-    weightedOrganicBounce += (Number(r.organic_bounce_rate) || 0) * s;
-    weightedDuration += (Number(r.avg_session_duration) || 0) * s;
+    if (r.bounce_rate !== null && r.bounce_rate !== undefined && !isNaN(Number(r.bounce_rate))) {
+      sumBounce += Number(r.bounce_rate);
+      countBounce++;
+    }
+    if (
+      r.organic_bounce_rate !== null &&
+      r.organic_bounce_rate !== undefined &&
+      !isNaN(Number(r.organic_bounce_rate))
+    ) {
+      sumOrganicBounce += Number(r.organic_bounce_rate);
+      countOrganicBounce++;
+    }
+    if (
+      r.avg_session_duration !== null &&
+      r.avg_session_duration !== undefined &&
+      !isNaN(Number(r.avg_session_duration))
+    ) {
+      sumDuration += Number(r.avg_session_duration);
+      countDuration++;
+    }
   }
 
-  const avgBounce = sumSessions > 0 ? weightedBounce / sumSessions : 0;
-  const avgOrganicBounce = sumSessions > 0 ? weightedOrganicBounce / sumSessions : 0;
-  const avgDuration = sumSessions > 0 ? weightedDuration / sumSessions : 0;
+  const avgBounce = countBounce > 0 ? sumBounce / countBounce : 0;
+  const avgOrganicBounce = countOrganicBounce > 0 ? sumOrganicBounce / countOrganicBounce : 0;
+  const avgDuration = countDuration > 0 ? sumDuration / countDuration : 0;
 
   return {
     total_users: sumDailyUsers,

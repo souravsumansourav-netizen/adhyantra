@@ -7,6 +7,7 @@ import {
   isMetricFavourable,
   METRIC_CONFIG,
   DEFAULT_SETTINGS,
+  getBaselineDate,
 } from '@/lib/metrics';
 import { PublicMetric, MetricKey } from '@/types';
 
@@ -25,12 +26,6 @@ export async function GET(request: Request) {
 
       // Reads ONLY from public_metrics view using anon key!
       const anonClient = createBrowserClient(supabaseUrl, supabaseAnonKey);
-
-      // Compute YoY baseline date range
-      const [sY, sM, sD] = startDate.split('-');
-      const [eY, eM, eD] = endDate.split('-');
-      const prevYearStart = `${parseInt(sY, 10) - 1}-${sM}-${sD}`;
-      const prevYearEnd = `${parseInt(eY, 10) - 1}-${eM}-${eD}`;
 
       const { data, error } = await anonClient
         .from('public_metrics')
@@ -54,14 +49,16 @@ export async function GET(request: Request) {
       publishedRows = DemoStore.getPublishedMetrics();
     }
 
-    // Generate all dates in the requested range [startDate, endDate]
+    // Generate all dates in the requested range [startDate, endDate] safely with UTC
     const daysInRange: string[] = [];
-    const curr = new Date(startDate);
-    const end = new Date(endDate);
+    const [sY, sM, sD] = startDate.split('-').map(Number);
+    const [eY, eM, eD] = endDate.split('-').map(Number);
+    const curr = new Date(Date.UTC(sY, sM - 1, sD));
+    const end = new Date(Date.UTC(eY, eM - 1, eD));
 
     while (curr <= end) {
       daysInRange.push(curr.toISOString().split('T')[0]);
-      curr.setDate(curr.getDate() + 1);
+      curr.setUTCDate(curr.getUTCDate() + 1);
     }
 
     const missingDays: { date: string; reason: string }[] = [];
@@ -80,17 +77,12 @@ export async function GET(request: Request) {
       }
     });
 
-    const allMrigankaList = Array.from(mrigankaMap.values());
-
     for (const d of daysInRange) {
-      const [y, m, day] = d.split('-');
-      const prevYearDate = `${parseInt(y, 10) - 1}-${m}-${day}`;
+      // 10th Oct -> 21st Sep, 11th Oct -> 22nd Sep, and so on
+      const baselineDate = getBaselineDate(d, 'festival');
 
       const adhy = adhyantraMap.get(d);
-      const mrig =
-        mrigankaMap.get(prevYearDate) ||
-        mrigankaMap.get(d) ||
-        (allMrigankaList.length > 0 ? allMrigankaList[0] : undefined);
+      const mrig = mrigankaMap.get(baselineDate);
 
       if (!adhy) {
         missingDays.push({ date: d, reason: 'Adhyantra data not published or missing' });
@@ -98,7 +90,7 @@ export async function GET(request: Request) {
       if (!mrig) {
         missingDays.push({
           date: d,
-          reason: `Mriganka baseline data not published or missing`,
+          reason: `Mriganka baseline data not published or missing (${baselineDate})`,
         });
       }
 
@@ -107,7 +99,7 @@ export async function GET(request: Request) {
 
       dailyTrend.push({
         date: d,
-        baselineDate: mrig?.metric_date || prevYearDate,
+        baselineDate,
         hasAdhyantra: !!adhy,
         hasMriganka: !!mrig,
         adhyantra: adhy
@@ -179,10 +171,15 @@ export async function GET(request: Request) {
       };
     }
 
+    const baselineStartDate = getBaselineDate(startDate, 'festival');
+    const baselineEndDate = getBaselineDate(endDate, 'festival');
+
     return NextResponse.json({
       success: true,
       startDate,
       endDate,
+      baselineStartDate,
+      baselineEndDate,
       kpis,
       dailyTrend,
       missingDays,

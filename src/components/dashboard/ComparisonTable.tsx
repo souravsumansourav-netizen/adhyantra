@@ -19,9 +19,19 @@ interface ComparisonTableProps {
       direction: string;
     }
   >;
+  startDate?: string;
+  endDate?: string;
+  baselineStartDate?: string;
+  baselineEndDate?: string;
 }
 
-export default function ComparisonTable({ kpis }: ComparisonTableProps) {
+export default function ComparisonTable({
+  kpis,
+  startDate,
+  endDate,
+  baselineStartDate,
+  baselineEndDate,
+}: ComparisonTableProps) {
   const metricOrder: MetricKey[] = [
     'total_users',
     'sessions',
@@ -30,6 +40,19 @@ export default function ComparisonTable({ kpis }: ComparisonTableProps) {
     'new_users',
     'organic_bounce_rate',
   ];
+
+  const isRange = startDate && endDate && startDate !== endDate;
+  const adhyantraDateText = startDate && endDate
+    ? startDate === endDate
+      ? startDate
+      : `${startDate} — ${endDate}`
+    : '';
+
+  const baselineDateText = baselineStartDate && baselineEndDate
+    ? baselineStartDate === baselineEndDate
+      ? baselineStartDate
+      : `${baselineStartDate} — ${baselineEndDate}`
+    : '';
 
   return (
     <div className="bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs space-y-4">
@@ -50,8 +73,22 @@ export default function ComparisonTable({ kpis }: ComparisonTableProps) {
           <thead>
             <tr className="bg-slate-50/90 text-slate-600 uppercase tracking-wider font-bold border-b border-slate-200">
               <th className="py-3 px-4">Metric</th>
-              <th className="py-3 px-4 text-right">Adhyantra (Live)</th>
-              <th className="py-3 px-4 text-right">Mriganka (Baseline)</th>
+              <th className="py-3 px-4 text-right">
+                <div>Adhyantra (Live)</div>
+                {adhyantraDateText && (
+                  <div className="text-[10px] text-indigo-600 font-semibold normal-case tracking-normal">
+                    {adhyantraDateText}
+                  </div>
+                )}
+              </th>
+              <th className="py-3 px-4 text-right">
+                <div>Mriganka (Baseline)</div>
+                {baselineDateText && (
+                  <div className="text-[10px] text-slate-500 font-semibold normal-case tracking-normal">
+                    {baselineDateText}
+                  </div>
+                )}
+              </th>
               <th className="py-3 px-4 text-right">Growth %</th>
               <th className="py-3 px-4 text-right">Benchmark Rule</th>
             </tr>
@@ -65,12 +102,27 @@ export default function ComparisonTable({ kpis }: ComparisonTableProps) {
               const isPositive = item.changePct > 0;
               const isFavourable = item.isFavourable;
 
+              let subDescription = config.description;
+              if (key === 'total_users') {
+                subDescription = 'Sum of daily users';
+              } else if (key === 'sessions') {
+                subDescription = isRange ? 'Sum of sessions' : config.description;
+              } else if (key === 'new_users') {
+                subDescription = isRange ? 'Sum of new users' : config.description;
+              } else if (key === 'bounce_rate') {
+                subDescription = isRange ? 'Average of daily bounce rates' : config.description;
+              } else if (key === 'avg_session_duration') {
+                subDescription = isRange ? 'Average session duration across dates' : config.description;
+              } else if (key === 'organic_bounce_rate') {
+                subDescription = isRange ? 'Average organic bounce rate across dates' : config.description;
+              }
+
               return (
                 <tr key={key} className="hover:bg-slate-50/60 transition-colors">
                   <td className="py-3.5 px-4 font-bold text-slate-900">
                     <div>{config.label}</div>
                     <div className="text-[11px] text-slate-400 font-normal">
-                      {key === 'total_users' ? 'Sum of daily users' : config.description}
+                      {subDescription}
                     </div>
                   </td>
 

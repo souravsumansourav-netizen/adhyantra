@@ -12,6 +12,10 @@ import { MetricKey } from '@/types';
 export default function PublicDashboardPage() {
   const [startDate, setStartDate] = useState('2026-10-10');
   const [endDate, setEndDate] = useState('2026-10-10');
+  const [baselineRange, setBaselineRange] = useState<{ start: string; end: string }>({
+    start: '2025-09-21',
+    end: '2025-09-21',
+  });
   const [loading, setLoading] = useState(true);
   const [kpis, setKpis] = useState<any | null>(null);
   const [dailyTrend, setDailyTrend] = useState<any[]>([]);
@@ -30,6 +34,12 @@ export default function PublicDashboardPage() {
         setDailyTrend(data.dailyTrend || []);
         setMissingDays(data.missingDays || []);
         setTotalPublishedDays(data.totalPublishedDays || 0);
+        if (data.baselineStartDate && data.baselineEndDate) {
+          setBaselineRange({
+            start: data.baselineStartDate,
+            end: data.baselineEndDate,
+          });
+        }
       }
     } catch (err) {
       console.error('Failed to load public metrics:', err);
@@ -56,6 +66,8 @@ export default function PublicDashboardPage() {
         <DateRangePicker
           startDate={startDate}
           endDate={endDate}
+          baselineStartDate={baselineRange.start}
+          baselineEndDate={baselineRange.end}
           onChangeRange={handleRangeChange}
         />
 
@@ -82,7 +94,15 @@ export default function PublicDashboardPage() {
             <TrendChart trendData={dailyTrend} />
 
             {/* Performance Breakdown Table */}
-            {kpis && <ComparisonTable kpis={kpis} />}
+            {kpis && (
+              <ComparisonTable
+                kpis={kpis}
+                startDate={startDate}
+                endDate={endDate}
+                baselineStartDate={baselineRange.start}
+                baselineEndDate={baselineRange.end}
+              />
+            )}
           </>
         )}
       </main>
