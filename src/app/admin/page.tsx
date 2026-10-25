@@ -13,7 +13,7 @@ import UploadPanel from '@/components/admin/UploadPanel';
 import AuditLogTab from '@/components/admin/AuditLogTab';
 import SettingsTab from '@/components/admin/SettingsTab';
 import FixDrawer from '@/components/admin/FixDrawer';
-import { createClient } from '@/lib/supabase/client';
+
 import {
   Sliders,
   UploadCloud,
@@ -79,12 +79,10 @@ export default function AdminDashboardPage() {
 
   const handleLogout = async () => {
     try {
-      const supabase = createClient();
-      await supabase.auth.signOut();
+      await fetch('/api/admin/logout', { method: 'POST' });
     } catch {
       // Ignore
     }
-    sessionStorage.removeItem('demo_admin_email');
     router.push('/');
   };
 
